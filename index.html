@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fantasy Text RPG - 16bit Edition + Classes, Quests & Events</title>
+  <style>
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      background-color: #1e1e1e;
+      color: #f5f5f5;
+      padding: 20px;
+      margin: 0;
+      transition: background-image 0.5s ease-in-out;
+    }
+
+    #game-container {
+      max-width: 650px;
+      margin: auto;
+      background-color: #2c2c2c;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 20px #000;
+    }
+
+    #output {
+      min-height: 250px;
+      white-space: pre-wrap;
+      margin-bottom: 10px;
+      background: #1a1a1a;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-y: auto;
+      max-height: 350px;
+      border: 2px solid #444;
+    }
+
+    #input {
+      width: 70%;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 4px;
+      border: none;
+      background-color: #333;
+      color: #eee;
+    }
+
+    #submit {
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 4px;
+      border: none;
+      background-color: #4caf50;
+      color: white;
+      cursor: pointer;
+      margin-left: 5px;
+    }
+
+    #submit:hover {
+      background-color: #45a049;
+    }
+
+    #battle-graphics {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 40px;
+      margin-bottom: 10px;
+    }
+
+    #battle-graphics img {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width: 120px;
+      height: 120px;
+      object-fit: contain;
+      background-color: #000;
+      border: 2px solid #666;
+      border-radius: 4px;
+    }
+
+    #health-bars {
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+
+    .hp-bar {
+      height: 12px;
+      width: 200px;
+      margin: 5px 0;
+      border-radius: 5px;
+      background-color: #e53935; /* enemy red */
+      transition: width 0.3s ease;
+    }
+
+    #health-bars > div:nth-child(1) .hp-bar {
+      background-color: #4caf50; /* player green */
+    }
+
+    /* Backgrounds */
+
+    body.town {
+      background-image: url('https://i.imgur.com/6RkOjFy.png');
+      background-size: cover;
+      background-position: center;
+    }
+
+    body.forest {
+      background-image: url('https://i.imgur.com/zOgW3E6.png');
+      background-size: cover;
+      background-position: center;
+    }
+
+    body.cave {
+      background-image: url('https://i.imgur.com/ybkEDM7.png');
+      background-size: cover;
+      background-position: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <h1>Fantasy Text RPG - 16bit Edition</h1>
+
+    <div id="battle-graphics">
+      <img id="player-img" src="" alt="player" />
+      <img id="enemy-img" src="" alt="enemy" hidden />
+    </div>
+
+    <div id="health-bars">
+      <div>❤️ You: <div id="player-hp-bar" class="hp-bar"></div></div>
+      <div>💀 Enemy: <div id="enemy-hp-bar" class="hp-bar"></div></div>
+    </div>
+
+    <div id="output"></div>
+    <input type="text" id="input" placeholder="Type your action..." autofocus autocomplete="off" />
+    <button id="submit">Enter</button>
+  </div>
+
+<script>
+  // Elements
+  const output = document.getElementById("output");
+  const input = document.getElementById("input");
+  const submit = document.getElementById("submit");
+  const enemyImg = document.getElementById("enemy-img");
+  const playerImg = document.getElementById("player-img");
+  const playerHpBar = document.getElementById("player-hp-bar");
+  const enemyHpBar = document.getElementById("enemy-hp-bar");
+
+  // Sprites (16-bit style)
+  const playerSpriteUrl = "https://i.imgur.com/zqA9v1z.png";
+
+  // Classes with unique base stats & skill trees
+  const classes = {
+    warrior: {
+      name: "Warrior",
+      hp: 120,
+      maxHp: 120,
+      attackRange: [8, 15],
+      description: "Strong melee fighter with high HP.",
+      skills: {
+        "Power Strike": {desc: "Deal +5 damage on attack.", cost: 1, unlocked: false},
+        "Fortify": {desc: "Increase max HP by 30.", cost: 2, unlocked: false},
+        "Whirlwind": {desc: "Attack all enemies in combat for moderate damage.", cost: 3, unlocked: false}
+      }
+    },
+    mage: {
+      name: "Mage",
+      hp: 80,
+      maxHp: 80,
+      attackRange: [10, 20],
+      description: "Spellcaster with high damage but low HP.",
+      skills: {
+        "Fireball": {desc: "Deal 15 damage ignoring enemy defense.", cost: 1, unlocked: false},
+        "Mana Shield": {desc: "Absorb 10 damage next attack.", cost: 2, unlocked: false},
+        "Lightning Storm": {desc: "Chance to stun enemy and double damage.", cost: 3, unlocked: false}
+      }
+    },
+    rogue: {
+      name: "Rogue",
+      hp: 90,
+      maxHp: 90,
+      attackRange: [6, 18],
+      description: "Quick attacker with chance to dodge enemy hits.",
+      skills: {
+        "Backstab": {desc: "Deal double damage on first attack.", cost: 1, unlocked: false},
+        "Evasion": {desc: "10% chance to dodge enemy attacks.", cost: 2, unlocked: false},
+        "Poison Blade": {desc: "Enemy takes 5 poison damage for 3 turns.", cost: 3, unlocked: false}
+      }
+    }
+  };
+
+  // Enemies + bosses
+  const enemies = {
+    goblin: {
+      name: "Goblin",
+      hp: 30,
+      attack: 5,
+      xp: 10,
+      img: "https://i.imgur.com/2xS2xjv.png",
+    },
+    skeleton: {
+      name: "Skeleton",
+      hp: 40,
+      attack: 7,
+      xp: 20,
+      img: "https://i.imgur.com/Vp1DWog.png",
+    },
+    dragon: {
+      name: "Dragon",
+      hp: 100,
+      attack: 15,
+      xp: 100,
+      img: "https://i.imgur.com/6Z5X2Nh.png",
+    },
+    alien: {
+      name: "Alien Invader",
+      hp: 70,
+      attack: 12,
+      xp: 50,
+      img: "https://i.imgur.com/l6mKrKi.png", // alien sprite
+    },
+    lich: {
+      name: "Dark Lich",
+      hp: 120,
+      attack: 18,
+      xp: 150,
+      img: "https://i.imgur.com/7G1kd69.png", // lich sprite
+    }
+  };
+
+  // Areas
+  const areas = ["town", "forest", "cave"];
+
+  // Quests (simple)
+  const quests = {
+    dragon: {
+      name: "Slay the Dragon",
+      description: "Defeat the mighty dragon in the cave.",
+      area: "cave",
+      boss: "dragon",
+      completed: false,
+    },
+    lich: {
+      name: "Defeat the Dark Lich",
+      description: "Find and defeat the Dark Lich lurking in the forest.",
+      area: "forest",
+      boss: "lich",
+      completed: false,
+    }
+  };
+
+  // Game state
+  let gameState = {
+    name: null,
+    class: null,
+    hp: 0,
+    maxHp: 0,
+    xp: 0,
+    level: 1,
+    potions: 3,
+    area: "town",
+    enemy: null,
+    step: "start",
+    skillPoints: 0,
+    skillsLearned: [],
+    questActive: null,
+    poisonTicks: 0,
+    poisonDamage: 0,
+    dodgeChance: 0,
+    manaShieldActive: false,
+    fortifyActive: false,
+  };
+
+  // Initialize player sprite
+  playerImg.src = playerSpriteUrl;
+
+  // Utilities
+  function clearDisplay() {
+    output.textContent = "";
+  }
+
+  function display(text) {
+    output.textContent += text + "\n";
+    output.scrollTop = output.scrollHeight;
+  }
+
+  function updateHealthBars() {
+    playerHpBar.style.width = `${(gameState.hp / gameState.maxHp) * 100}%`;
+    if (gameState.enemy) {
+      const maxEnemyHp = enemies[gameState.enemy.name.toLowerCase()]?.hp || gameState.enemy.hp || 50;
+      enemyHpBar.style.width = `${(gameState.enemy.hp / maxEnemyHp) * 100}%`;
+      enemyImg.src = gameState.enemy.img;
+      enemyImg.hidden = false;
+    } else {
+      enemyHpBar.style.width = "0%";
+      enemyImg.hidden = true;
+    }
+  }
+
+  // Level up function
+  function levelUp() {
+    gameState.level++;
+    gameState.skillPoints += 1;
+    // Increase max HP by 20 per level + class bonuses
+    let hpBonus = 20;
+    if (gameState.class === "warrior" && gameState.fortifyActive) hpBonus += 30; 
+    gameState.maxHp += hpBonus;
+    gameState.hp = gameState.maxHp;
+    display(`You leveled up to level ${gameState.level}! Max HP increased.`);
+    display(`You gained 1 skill point. Type SKILLS to view your skills.`);
+  }
+
+  // Gain XP and handle level up
+  function gainXP(amount) {
+    gameState.xp += amount;
+    display(`You gained ${amount} XP.`);
+    let xpNeeded = gameState.level * 50;
+    while (gameState.xp >= xpNeeded) {
+      gameState.xp -= xpNeeded;
+      levelUp();
+      xpNeeded = gameState.level * 50;
+    }
+  }
+
+  // Show player status
+  function showStatus() {
+    display(`HP: ${gameState.hp}/${gameState.maxHp} | Potions: ${gameState.potions} | Level: ${gameState.level} | XP: ${gameState.xp}`);
+    if (gameState.questActive) display(`Active Quest: ${quests[gameState.questActive].name}`);
+  }
+
+  // Show skills
+  function showSkills() {
+    if (!gameState.class) {
+      display("You have no class selected.");
+      return;
+    }
+    const classSkills = classes[gameState.class].skills;
+    display("Your Skills:");
+    for (const skillName in classSkills) {
+      const skill = classSkills[skillName];
+      const status = gameState.skillsLearned.includes(skillName) ? "✅" : `Cost: ${skill.cost}`;
+      display(`- ${skillName}: ${skill.desc} (${status})`);
+    }
+    display(`Skill points available: ${gameState.skillPoints}`);
+  }
+
+  // Learn a skill if possible
+  function learnSkill(skillName) {
+    if (!gameState.class) {
+      display("You have no class selected.");
+      return;
+    }
+    const classSkills = classes[gameState.class].skills;
+    if (!classSkills[skillName]) {
+      display(`Skill "${skillName}" does not exist.`);
+      return;
+    }
+    if (gameState.skillsLearned.includes(skillName)) {
+      display(`You already learned "${skillName}".`);
+      return;
+    }
+    const skill = classSkills[skillName];
+    if (gameState.skillPoints < skill.cost) {
+      display(`Not enough skill points to learn "${skillName}".`);
+      return;
+    }
+    gameState.skillPoints -= skill.cost;
+    gameState.skillsLearned.push(skillName);
+    display(`You learned skill "${skillName}"!`);
+    // Apply immediate skill effects
+    if (skillName === "Fortify") {
+      gameState.maxHp += 30;
+      gameState.hp += 30;
+      gameState.fortifyActive = true;
+    }
+  }
+
+  // Spawn enemy (random normal or boss if quest active)
+  function spawnEnemy() {
+    if (gameState.questActive) {
+      const quest = quests[gameState.questActive];
+      // 50% chance boss if in correct area
+      if (gameState.area === quest.area && Math.random() < 0.5) {
+        const boss = enemies[quest.boss];
+        gameState.enemy = {...boss}; // clone boss object
+        display(`A fearsome boss appears: ${boss.name}! Prepare to fight!`);
+        updateHealthBars();
+        return;
+      }
+    }
+
+    // Otherwise normal enemy depending on area
+    let enemyPool = [];
+    if (gameState.area === "forest") {
+      enemyPool = [enemies.goblin, enemies.skeleton, enemies.alien];
+    } else if (gameState.area === "cave") {
+      enemyPool = [enemies.skeleton, enemies.goblin];
+    } else if (gameState.area === "town") {
+      enemyPool = []; // no enemies in town
+    }
+
+    if (enemyPool.length === 0) {
+      gameState.enemy = null;
+      return;
+    }
+
+    const enemy = enemyPool[Math.floor(Math.random() * enemyPool.length)];
+    gameState.enemy = {...enemy};
+    display(`A wild ${enemy.name} appears!`);
+    updateHealthBars();
+  }
+
+  // Apply poison damage each turn
+  function applyPoison() {
+    if (gameState.poisonTicks > 0) {
+      gameState.hp -= gameState.poisonDamage;
+      display(`You take ${gameState.poisonDamage} poison damage.`);
+      gameState.poisonTicks--;
+      if (gameState.hp <= 0) {
+        display("You have died from poison!");
+        gameOver();
+      }
+    }
+  }
+
+  // Player attack
+  function playerAttack() {
+    if (!gameState.enemy) {
+      display("No enemy to attack.");
+      return;
+    }
+
+    // Calculate base damage from class range
+    const [min, max] = classes[gameState.class].attackRange;
+    let damage = Math.floor(Math.random() * (max - min + 1)) + min;
+
+    // Apply skill effects
+    if (gameState.skillsLearned.includes("Power Strike")) damage += 5;
+    if (gameState.skillsLearned.includes("Backstab") && gameState.step === "battle-start") {
+      damage *= 2;
+      display("Backstab activated! Double damage!");
+    }
+    if (gameState.skillsLearned.includes("Fireball")) {
+      damage = 15; // fixed damage ignoring defense
+      display("Casting Fireball for 15 damage!");
+    }
+
+    // Enemy takes damage
+    gameState.enemy.hp -= damage;
+    display(`You attack ${gameState.enemy.name} for ${damage} damage!`);
+
+    // Poison blade effect
+    if (gameState.skillsLearned.includes("Poison Blade")) {
+      gameState.enemy.poisonTicks = 3;
+      gameState.enemy.poisonDamage = 5;
+      display(`${gameState.enemy.name} is poisoned! They will take damage over time.`);
+    }
+
+    if (gameState.enemy.hp <= 0) {
+      display(`You defeated the ${gameState.enemy.name}!`);
+      gainXP(gameState.enemy.xp);
+      gameState.enemy = null;
+      updateHealthBars();
+      checkQuestCompletion();
+      return;
+    }
+
+    // Enemy retaliates
+    enemyAttack();
+  }
+
+  // Enemy attack
+  function enemyAttack() {
+    if (!gameState.enemy) return;
+
+    // Check dodge for rogue
+    if (gameState.class === "rogue" && gameState.skillsLearned.includes("Evasion")) {
+      const dodgeRoll = Math.random();
+      if (dodgeRoll < 0.1) {
+        display("You dodged the enemy attack!");
+        return;
+      }
+    }
+
+    let damage = gameState.enemy.attack;
+
+    // Mana Shield effect
+    if (gameState.manaShieldActive) {
+      display("Your Mana Shield absorbs the damage!");
+      gameState.manaShieldActive = false;
+      damage = 0;
+    }
+
+    gameState.hp -= damage;
+    display(`${gameState.enemy.name} attacks you for ${damage} damage!`);
+
+    if (gameState.hp <= 0) {
+      display("You died in battle...");
+      gameOver();
+    }
+  }
+
+  // Use potion
+  function usePotion() {
+    if (gameState.potions <= 0) {
+      display("You have no potions left!");
+      return;
+    }
+    if (gameState.hp === gameState.maxHp) {
+      display("Your health is already full!");
+      return;
+    }
+    gameState.potions--;
+    const healAmount = 40;
+    gameState.hp += healAmount;
+    if (gameState.hp > gameState.maxHp) gameState.hp = gameState.maxHp;
+    display(`You used a potion and healed ${healAmount} HP.`);
+  }
+
+  // Check quest completion
+  function checkQuestCompletion() {
+    if (!gameState.questActive) return;
+
+    const quest = quests[gameState.questActive];
+    if (!quest.completed && !gameState.enemy) {
+      quest.completed = true;
+      display(`🎉 Quest Complete: ${quest.name}!`);
+      gameState.questActive = null;
+      gainXP(100);
+    }
+  }
+
+  // Random event handler
+  function randomEvent() {
+    const chance = Math.random();
+    if (chance < 0.15) {
+      // Alien NPC encounter
+      display("\n🌌 An alien NPC approaches you!");
+      const alienEvents = [
+        {
+          text: "They offer you a strange glowing potion. Do you ACCEPT or DECLINE?",
+          options: ["accept", "decline"],
+          action: (choice) => {
+            if (choice === "accept") {
+              gameState.potions++;
+              display("You received 1 potion! Use it wisely.");
+            } else {
+              display("The alien shrugs and leaves.");
+            }
+          }
+        },
+        {
+          text: "The alien asks: 'Solve this riddle or lose 20 HP: What has keys but can't open locks?'",
+          options: ["piano", "keyboard", "map"],
+          answer: "piano",
+          action: (choice) => {
+            if (choice === "piano") {
+              display("Correct! The alien grants you 50 XP.");
+              gainXP(50);
+            } else {
+              gameState.hp -= 20;
+              display("Wrong! You lose 20 HP.");
+              if (gameState.hp <= 0) gameOver();
+            }
+          }
+        },
+        {
+          text: "The alien offers to teach you a random skill for 1 skill point. Type LEARN [skill name] to accept.",
+          options: [],
+          action: () => {
+            const availableSkills = Object.entries(classes[gameState.class].skills)
+              .filter(([skillName]) => !gameState.skillsLearned.includes(skillName));
+            if (availableSkills.length === 0) {
+              display("But you already know all skills!");
+            } else {
+              const [skillName] = availableSkills[Math.floor(Math.random() * availableSkills.length)];
+              display(`Skill available: ${skillName}. If you have skill points, type LEARN ${skillName} to learn it.`);
+            }
+          }
+        }
+      ];
+      const event = alienEvents[Math.floor(Math.random() * alienEvents.length)];
+      display(event.text);
+      gameState.pendingAlienEvent = event;
+    }
+  }
+
+  // Game over
+  function gameOver() {
+    display("\nGAME OVER. Refresh the page to try again.");
+    submit.disabled = true;
+    input.disabled = true;
+  }
+
+  // Change area background
+  function updateAreaBackground() {
+    document.body.className = gameState.area;
+  }
+
+  // Travel between areas
+  function travel(areaName) {
+    if (!areas.includes(areaName)) {
+      display(`You cannot travel to "${areaName}". Valid areas: ${areas.join(", ")}`);
+      return;
+    }
+    gameState.area = areaName;
+    display(`You travel to the ${areaName}.`);
+    updateAreaBackground();
+    spawnEnemy();
+    showStatus();
+    randomEvent();
+  }
+
+  // Handle player input commands
+  function handleInput(text) {
+    text = text.trim().toLowerCase();
+
+    // Handle alien NPC event response
+    if (gameState.pendingAlienEvent) {
+      const event = gameState.pendingAlienEvent;
+      if (event.options.length === 0 || event.options.includes(text)) {
+        event.action(text);
+        gameState.pendingAlienEvent = null;
+      } else {
+        display(`Please respond with one of the options: ${event.options.join(", ")}`);
+      }
+      updateHealthBars();
+      return;
+    }
+
+    // Game start: ask name
+    if (gameState.step === "start") {
+      if (text.length < 2) {
+        display("Please enter a valid name (at least 2 characters).");
+        return;
+      }
+      gameState.name = text.charAt(0).toUpperCase() + text.slice(1);
+      display(`Welcome, ${gameState.name}! Choose your class: Warrior, Mage, Rogue.`);
+      gameState.step = "choose-class";
+      return;
+    }
+
+    // Class selection
+    if (gameState.step === "choose-class") {
+      if (!classes[text]) {
+        display("Invalid class. Please choose Warrior, Mage, or Rogue.");
+        return;
+      }
+      gameState.class = text;
+      const chosenClass = classes[text];
+      gameState.hp = chosenClass.hp;
+      gameState.maxHp = chosenClass.maxHp;
+      display(`You chose ${chosenClass.name}: ${chosenClass.description}`);
+      display("You start in the town. Type HELP for commands.");
+      updateAreaBackground();
+      showStatus();
+      gameState.step = "town";
+      return;
+    }
+
+    // Town commands
+    if (gameState.step === "town" || gameState.step === "forest" || gameState.step === "cave") {
+      // Travel commands
+      if (text.startsWith("travel ")) {
+        const dest = text.split(" ")[1];
+        if (dest === gameState.area) {
+          display(`You are already in the ${dest}.`);
+          return;
+        }
+        travel(dest);
+        gameState.step = dest;
+        return;
+      }
+
+      if (text === "help") {
+        display(
+`Commands:
+- travel [town/forest/cave]
+- explore (to search for enemies or events)
+- attack (in combat)
+- potion (use potion)
+- skills (view skill tree)
+- learn [skill name] (learn skill if you have points)
+- status (show stats)
+- quest (show current quest)
+- accept quest (accept new quest)
+- dialog (talk to NPC in town)
+- save/load (not implemented)
+- quit (end game)
+`
+        );
+        return;
+      }
+
+      if (text === "status") {
+        showStatus();
+        return;
+      }
+
+      if (text === "skills") {
+        showSkills();
+        return;
+      }
+
+      if (text.startsWith("learn ")) {
+        const skillName = text.slice(6).replace(/(^\w|\s\w)/g, c => c.toUpperCase());
+        learnSkill(skillName);
+        return;
+      }
+
+      if (text === "potion") {
+        usePotion();
+        updateHealthBars();
+        return;
+      }
+
+      if (text === "explore") {
+        if (gameState.enemy) {
+          display("You are already in combat! Type ATTACK or use POTION.");
+          return;
+        }
+        spawnEnemy();
+        randomEvent();
+        updateHealthBars();
+        return;
+      }
+
+      if (text === "attack") {
+        if (!gameState.enemy) {
+          display("No enemy to attack.");
+          return;
+        }
+        playerAttack();
+        applyPoison();
+
+        updateHealthBars();
+        return;
+      }
+
+      if (text === "quest") {
+        if (gameState.questActive) {
+          display(`Current Quest: ${quests[gameState.questActive].name}\n${quests[gameState.questActive].description}`);
+        } else {
+          display("You have no active quest. Type ACCEPT QUEST to take a quest.");
+        }
+        return;
+      }
+
+      if (text === "accept quest") {
+        if (gameState.questActive) {
+          display("You already have an active quest.");
+          return;
+        }
+        // Choose first incomplete quest
+        const nextQuest = Object.keys(quests).find(q => !quests[q].completed);
+        if (!nextQuest) {
+          display("No quests available. You have completed them all!");
+          return;
+        }
+        gameState.questActive = nextQuest;
+        display(`Quest accepted: ${quests[nextQuest].name}\n${quests[nextQuest].description}`);
+        return;
+      }
+
+      if (text === "dialog") {
+        if (gameState.area !== "town") {
+          display("There is no one to talk to here.");
+          return;
+        }
+        display("Town NPC: 'Welcome traveler! Beware the forest and cave. Complete quests to grow stronger.'");
+        return;
+      }
+
+      if (text === "quit") {
+        display("Thank you for playing! Refresh the page to start again.");
+        submit.disabled = true;
+        input.disabled = true;
+        return;
+      }
+
+      display("Unknown command. Type HELP for a list of commands.");
+      return;
+    }
+
+    display("Unhandled input or game state.");
+  }
+
+  // Init game prompt
+  clearDisplay();
+  display("Welcome to Fantasy Text RPG 16bit Edition!\nWhat is your name?");
+  updateHealthBars();
+
+  submit.onclick = () => {
+    const text = input.value;
+    input.value = "";
+    handleInput(text);
+    updateHealthBars();
+    input.focus();
+  };
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit.click();
+  });
+
+  updateAreaBackground();
+</script>
+</body>
+</html>
